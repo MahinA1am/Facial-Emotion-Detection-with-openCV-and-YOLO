@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.log
+
+# Virtual environment
+venv/
+ENV/
+env/
+.venv/
+
+# Django stuff
+*.sqlite3
+db.sqlite3
+/media/
+staticfiles/
+
+# PyTorch / YOLO
+runs/
+*.pt   # if you want to keep your model local, uncomment this
+!best.pt  # exception: keep your trained model in Git
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System files
+.DS_Store
+Thumbs.db
