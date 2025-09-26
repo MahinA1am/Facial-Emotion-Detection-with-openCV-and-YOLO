@@ -4,6 +4,11 @@ import cv2
 from ultralytics import YOLO
 import os
 import numpy as np
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+import tempfile
+
 
 # Load YOLO emotion model
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,7 +42,7 @@ def sharpen(face):
     return cv2.filter2D(face, -1, kernel)
 
 # Choose enhancement method
-ENHANCEMENT = "hist_eq"  # options: "hist_eq", "gamma", "denoise", "sharpen", None
+ENHANCEMENT = "gamma"  # options: "hist_eq", "gamma", "denoise", "sharpen", None
 
 def enhance_face(face):
     if ENHANCEMENT == "hist_eq":
@@ -101,3 +106,58 @@ def video_feed(request):
         gen_frames(),
         content_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+@api_view(['POST'])
+def predict_emotion(request):
+    """
+    API endpoint: /api/predict/
+    Accepts an image, runs face detection + enhancement + YOLO,
+    and returns the predicted emotion.
+    """
+    file_obj = request.FILES.get('image')
+    if not file_obj:
+        return Response({"error": "No image uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Save the uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+        for chunk in file_obj.chunks():
+            tmp.write(chunk)
+        tmp_path = tmp.name
+
+    # Read the image
+    img = cv2.imread(tmp_path)
+    if img is None:
+        return Response({"error": "Invalid image"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Convert to grayscale and detect face
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
+
+    if len(faces) == 0:
+        return Response({"error": "No face detected"}, status=status.HTTP_200_OK)
+
+    emotions = []
+    for (x, y, w, h) in faces:
+        face_roi = img[y:y+h, x:x+w]
+        enhanced_face = enhance_face(face_roi)
+        resized_face = cv2.resize(enhanced_face, (640, 640))
+
+        # Run YOLO
+        results = model(resized_face, conf=0.15)
+
+        for r in results:
+            boxes = r.boxes
+            for box in boxes:
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+                label = model.names[cls]
+                emotions.append({"emotion": label, "confidence": round(conf, 2)})
+
+    # Remove temporary file
+    os.remove(tmp_path)
+
+    if not emotions:
+        return Response({"error": "No emotion detected"}, status=status.HTTP_200_OK)
+
+    return Response({"detections": emotions}, status=status.HTTP_200_OK)
+
